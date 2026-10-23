@@ -13,6 +13,7 @@ const CONFIG = {
   messageColor: '#b5646a',  // colour of the message dot, glow, trail and pulse
   messageRadius: 5,         // radius of the message dot in px
   seed: 7,                  // PRNG seed: changes the layout (and the walk)
+  showDot: false,           // message dot + glow (off: only the trail is drawn)
   showTrail: true,          // short fading trail behind the message
   showPulse: false,          // expanding ring on a node when the message arrives
 };
@@ -186,8 +187,12 @@ const CONFIG = {
     var reduceMotion = window.matchMedia &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    var off = document.createElement('canvas');   // static graph layer
+    // Two static layers so the message can travel between them:
+    // depth nodes + edges below, foreground nodes above.
+    var off = document.createElement('canvas');   // depth nodes + edges
     var octx = off.getContext('2d');
+    var offNodes = document.createElement('canvas');   // foreground nodes
+    var nctx = offNodes.getContext('2d');
     var W = 0, H = 0, dpr = 1, minDim = 0;
     var px = [], py = [];                         // node positions in CSS px
 
@@ -225,26 +230,33 @@ const CONFIG = {
       });
       octx.stroke();
 
-      // Foreground nodes.
+      // Foreground nodes (separate layer, drawn above the message).
+      nctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      nctx.clearRect(0, 0, W, H);
       nodes.forEach(function (nd, i) {
-        octx.globalAlpha = i === 0 ? 0.95 : 0.88;
-        octx.fillStyle = nd.color;
-        octx.beginPath(); octx.arc(px[i], py[i], nd.r * minDim, 0, 6.2832); octx.fill();
+        nctx.globalAlpha = i === 0 ? 1.00 : 1.00;
+        nctx.fillStyle = nd.color;
+        nctx.beginPath(); nctx.arc(px[i], py[i], nd.r * minDim, 0, 6.2832); nctx.fill();
       });
-      octx.globalAlpha = 1;
+      nctx.globalAlpha = 1;
 
-      // Soft elliptical fade toward the edges so it blends into the page.
-      octx.save();
-      octx.globalCompositeOperation = 'destination-in';
-      octx.translate(W / 2, H / 2); octx.scale(W / 2, H / 2);
-      var m = octx.createRadialGradient(0, 0, 0, 0, 0, 1);
+      applyMask(octx);
+      applyMask(nctx);
+    }
+
+    // Soft elliptical fade toward the edges so it blends into the page.
+    function applyMask(c) {
+      c.save();
+      c.globalCompositeOperation = 'destination-in';
+      c.translate(W / 2, H / 2); c.scale(W / 2, H / 2);
+      var m = c.createRadialGradient(0, 0, 0, 0, 0, 1);
       for (var i = 0; i <= 10; i++) {
         var t = 0.72 + 0.028 * i, f = (t - 0.72) / 0.28;
         m.addColorStop(Math.min(t, 1), 'rgba(0,0,0,' + (1 - f * f * (3 - 2 * f)).toFixed(3) + ')');
       }
       m.addColorStop(0, 'rgba(0,0,0,1)');
-      octx.fillStyle = m; octx.fillRect(-1, -1, 2, 2);
-      octx.restore();
+      c.fillStyle = m; c.fillRect(-1, -1, 2, 2);
+      c.restore();
     }
 
     // '#rrggbb' + alpha -> rgba string.
@@ -259,8 +271,8 @@ const CONFIG = {
       var d = window.devicePixelRatio || 1;
       if (w === W && h === H && d === dpr) return;
       W = w; H = h; dpr = d; minDim = Math.min(W, H);
-      canvas.width = off.width = Math.round(W * dpr);
-      canvas.height = off.height = Math.round(H * dpr);
+      canvas.width = off.width = offNodes.width = Math.round(W * dpr);
+      canvas.height = off.height = offNodes.height = Math.round(H * dpr);
       drawStatic();
       draw(performance.now());
     }
@@ -312,18 +324,9 @@ const CONFIG = {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(off, 0, 0);
-      if (reduceMotion || !px.length) return;
+      if (reduceMotion || !px.length) { ctx.drawImage(offNodes, 0, 0); return; }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       var col = CONFIG.messageColor, R = CONFIG.messageRadius;
-
-      // Expanding, fading pulse ring on the arrival node.
-      pulses.forEach(function (p) {
-        var t = p.age / PULSE_MS, nr = graph.nodes[p.node].r * minDim;
-        ctx.strokeStyle = hexA(col, (1 - t) * 0.8 * fade(px[p.node], py[p.node]));
-        ctx.lineWidth = 2 * (1 - t) + 0.5;
-        ctx.beginPath(); ctx.arc(px[p.node], py[p.node], nr + 2 + t * 22, 0, 6.2832); ctx.stroke();
-      });
-
       var f = fade(mx, my);
 
       // Short trail behind the dot while travelling.
@@ -332,20 +335,35 @@ const CONFIG = {
         var tx = px[cur] + (px[next] - px[cur]) * tp, ty = py[cur] + (py[next] - py[cur]) * tp;
         var lg = ctx.createLinearGradient(tx, ty, mx, my);
         lg.addColorStop(0, hexA(col, 0));
-        lg.addColorStop(1, hexA(col, 0.6 * f));
+        lg.addColorStop(1, hexA(col, 0.9 * f));
         ctx.strokeStyle = lg; ctx.lineWidth = R * 0.8; ctx.lineCap = 'round';
         ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(mx, my); ctx.stroke();
       }
 
       // Soft glow + dot.
-      var gl = ctx.createRadialGradient(mx, my, 0, mx, my, R * 4);
-      gl.addColorStop(0, hexA(col, 0.45 * f)); gl.addColorStop(1, hexA(col, 0));
-      ctx.fillStyle = gl;
-      ctx.beginPath(); ctx.arc(mx, my, R * 4, 0, 6.2832); ctx.fill();
-      ctx.globalAlpha = Math.max(0.25, f);
-      ctx.fillStyle = col;
-      ctx.beginPath(); ctx.arc(mx, my, R, 0, 6.2832); ctx.fill();
-      ctx.globalAlpha = 1;
+      if (CONFIG.showDot) {
+        var gl = ctx.createRadialGradient(mx, my, 0, mx, my, R * 4);
+        gl.addColorStop(0, hexA(col, 0.45 * f)); gl.addColorStop(1, hexA(col, 0));
+        ctx.fillStyle = gl;
+        ctx.beginPath(); ctx.arc(mx, my, R * 4, 0, 6.2832); ctx.fill();
+        ctx.globalAlpha = Math.max(0.25, f);
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(mx, my, R, 0, 6.2832); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+
+      // Foreground nodes cover the message.
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(offNodes, 0, 0);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      // Expanding, fading pulse ring on the arrival node (outside the node).
+      pulses.forEach(function (p) {
+        var t = p.age / PULSE_MS, nr = graph.nodes[p.node].r * minDim;
+        ctx.strokeStyle = hexA(col, (1 - t) * 0.8 * fade(px[p.node], py[p.node]));
+        ctx.lineWidth = 2 * (1 - t) + 0.5;
+        ctx.beginPath(); ctx.arc(px[p.node], py[p.node], nr + 2 + t * 22, 0, 6.2832); ctx.stroke();
+      });
     }
 
     // ---- Loop, with pause when hidden / offscreen -------------------------
