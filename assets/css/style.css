@@ -157,3 +157,6 @@ p{margin:0 0 1rem}
   html{scroll-behavior:auto}
   *,*::before,*::after{transition:none!important;animation:none!important}
 }
+
+.venue-link { color: inherit; text-decoration: none; }
+.venue-link:hover, .venue-link:focus-visible { text-decoration: underline; }

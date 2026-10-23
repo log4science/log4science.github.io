@@ -8,14 +8,20 @@
 // CONFIG - tweak the animation here.
 // ---------------------------------------------------------------------------
 const CONFIG = {
-  messageSpeed: 120,        // px per second along an edge
-  waitTime: [600, 1400],    // ms pause at each node; number or [min, max]
+  messageSpeed: 100,        // px per second along an edge
+  waitTime: [900, 1000],    // ms pause at each node; number or [min, max]
   messageColor: '#b5646a',  // colour of the message dot, glow, trail and pulse
   messageRadius: 5,         // radius of the message dot in px
   seed: 7,                  // PRNG seed: changes the layout (and the walk)
   showDot: false,           // message dot + glow (off: only the trail is drawn)
   showTrail: true,          // short fading trail behind the message
   showPulse: false,          // expanding ring on a node when the message arrives
+  jumpProbability: 0.2,     // chance per step of a wiggly "inferred link" jump to a non-neighbour
+  jumpRadius: 0.25,         // max jump distance, in normalized (0..1) graph coordinates
+  wiggleAmplitude: 2,       // px, peak sideways offset of the wiggly jump path
+  wiggleWavelength: 18,     // px, approximate wavelength of the wiggle
+  jumpTrailLength: 0.4,     // trail length (fraction of the path) during a jump
+  jumpColor: null,          // colour during a jump; null = same as messageColor
 };
 
 (function () {
@@ -284,12 +290,38 @@ const CONFIG = {
     var pulses = [];                              // {node, age}
     var PULSE_MS = 900;
     var mx = 0, my = 0;
+    var jumping = false, jumpWaves = 1;           // current move is a wiggly jump
 
     function pickWait() {
       var w = CONFIG.waitTime;
       return Array.isArray(w) ? w[0] + rnd() * (w[1] - w[0]) : w;
     }
     function ease(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
+
+    function smooth(t) { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); }
+
+    // Point on the current move at path parameter s in [0,1]: straight line,
+    // or (for jumps) a sine wave perpendicular to it, tapered to 0 at both ends.
+    function pathPoint(s) {
+      var x0 = px[cur], y0 = py[cur], dx = px[next] - x0, dy = py[next] - y0;
+      var x = x0 + dx * s, y = y0 + dy * s;
+      if (!jumping) return { x: x, y: y };
+      var L = Math.hypot(dx, dy) || 1;
+      var env = smooth(s / 0.15) * smooth((1 - s) / 0.15);
+      var off = CONFIG.wiggleAmplitude * Math.sin(6.2832 * jumpWaves * s) * env;
+      return { x: x - dy / L * off, y: y + dx / L * off };
+    }
+
+    // Nearby nodes not directly connected to `cur` (candidates for a jump).
+    function jumpCandidates() {
+      var out = [], nd = graph.nodes, adj = graph.adj[cur], r2 = CONFIG.jumpRadius * CONFIG.jumpRadius;
+      for (var i = 0; i < nd.length; i++) {
+        if (i === cur || adj.indexOf(i) >= 0) continue;
+        var dx = nd[i].x - nd[cur].x, dy = nd[i].y - nd[cur].y;
+        if (dx * dx + dy * dy <= r2) out.push(i);
+      }
+      return out;
+    }
 
     function step(dt) {
       for (var i = pulses.length - 1; i >= 0; i--) {
@@ -299,9 +331,29 @@ const CONFIG = {
       if (waiting) {
         waitLeft -= dt;
         if (waitLeft <= 0) {
-          var nb = graph.adj[cur];
-          next = nb[Math.floor(rnd() * nb.length)];
+          var nb = graph.adj[cur], cand = null;
+          jumping = false;
+          if (rnd() < CONFIG.jumpProbability) {
+            cand = jumpCandidates();
+            if (!cand.length) cand = null;
+          }
+          if (cand) {
+            next = cand[Math.floor(rnd() * cand.length)];
+            jumping = true;
+          } else {
+            next = nb[Math.floor(rnd() * nb.length)];
+          }
           var len = Math.hypot(px[next] - px[cur], py[next] - py[cur]);
+          if (jumping) {
+            jumpWaves = Math.max(1, Math.round(len / CONFIG.wiggleWavelength));
+            // Approximate arc length of the wiggly path by sampling it.
+            var arc = 0, pp = pathPoint(0);
+            for (var k = 1; k <= 40; k++) {
+              var qq = pathPoint(k / 40);
+              arc += Math.hypot(qq.x - pp.x, qq.y - pp.y); pp = qq;
+            }
+            len = arc;
+          }
           duration = Math.max(150, len / CONFIG.messageSpeed * 1000);
           progress = 0; waiting = false;
         }
@@ -314,9 +366,8 @@ const CONFIG = {
       }
       if (waiting) { mx = px[cur]; my = py[cur]; }
       else {
-        var e = ease(progress);
-        mx = px[cur] + (px[next] - px[cur]) * e;
-        my = py[cur] + (py[next] - py[cur]) * e;
+        var hp = pathPoint(ease(progress));
+        mx = hp.x; my = hp.y;
       }
     }
 
@@ -326,18 +377,28 @@ const CONFIG = {
       ctx.drawImage(off, 0, 0);
       if (reduceMotion || !px.length) { ctx.drawImage(offNodes, 0, 0); return; }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      var col = CONFIG.messageColor, R = CONFIG.messageRadius;
+      var col = (jumping && !waiting && CONFIG.jumpColor) || CONFIG.messageColor, R = CONFIG.messageRadius;
       var f = fade(mx, my);
 
       // Short trail behind the dot while travelling.
       if (CONFIG.showTrail && !waiting) {
-        var tp = ease(Math.max(0, progress - 0.25));
-        var tx = px[cur] + (px[next] - px[cur]) * tp, ty = py[cur] + (py[next] - py[cur]) * tp;
+        var lag = jumping ? CONFIG.jumpTrailLength : 0.25;
+        var s0 = ease(Math.max(0, progress - lag)), s1 = ease(progress);
+        var tail = pathPoint(s0), tx = tail.x, ty = tail.y;
         var lg = ctx.createLinearGradient(tx, ty, mx, my);
         lg.addColorStop(0, hexA(col, 0));
         lg.addColorStop(1, hexA(col, 0.9 * f));
-        ctx.strokeStyle = lg; ctx.lineWidth = R * 0.8; ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(mx, my); ctx.stroke();
+        ctx.strokeStyle = lg; ctx.lineWidth = R * 0.8; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        ctx.beginPath(); ctx.moveTo(tx, ty);
+        if (jumping) {
+          // Follow the wiggle: polyline sampled roughly every 2px of path.
+          var ns = Math.max(8, Math.min(60, Math.ceil(Math.hypot(px[next] - px[cur], py[next] - py[cur]) * (s1 - s0) / 2)));
+          for (var si = 1; si <= ns; si++) {
+            var sp = pathPoint(s0 + (s1 - s0) * si / ns);
+            ctx.lineTo(sp.x, sp.y);
+          }
+        } else ctx.lineTo(mx, my);
+        ctx.stroke();
       }
 
       // Soft glow + dot.
