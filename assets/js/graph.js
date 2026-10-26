@@ -19,7 +19,7 @@ const CONFIG = {
   showDot: false,           // message dot + glow (off: only the trail is drawn)
   showTrail: true,          // short fading trail behind the message
   showPulse: false,          // expanding ring on a node when the message arrives
-  jumpProbability: 0.2,     // chance per step of a wiggly "inferred link" jump to a non-neighbour
+  walkSteps: 3,             // edge steps before each wiggly "inferred link" jump to a non-neighbour
   jumpRadius: 0.25,         // max jump distance, in normalized (0..1) graph coordinates
   wiggleAmplitude: 2,       // px, peak sideways offset of the wiggly jump path
   wiggleWavelength: 18,     // px, approximate wavelength of the wiggle
@@ -298,6 +298,7 @@ const CONFIG = {
     var PULSE_MS = 900;
     var mx = 0, my = 0;
     var jumping = false, jumpWaves = 1;           // current move is a wiggly jump
+    var stepsSinceJump = 0;                       // edge steps taken since the last jump
 
     function pickWait() {
       var w = CONFIG.waitTime;
@@ -340,15 +341,19 @@ const CONFIG = {
         if (waitLeft <= 0) {
           var nb = graph.adj[cur], cand = null;
           jumping = false;
-          if (rnd() < CONFIG.jumpProbability) {
+          // Fixed cycle: walkSteps edge steps, then one jump. If no jump target
+          // is in range, keep walking and try again at the next node.
+          if (stepsSinceJump >= CONFIG.walkSteps) {
             cand = jumpCandidates();
             if (!cand.length) cand = null;
           }
           if (cand) {
             next = cand[Math.floor(rnd() * cand.length)];
             jumping = true;
+            stepsSinceJump = 0;
           } else {
             next = nb[Math.floor(rnd() * nb.length)];
+            stepsSinceJump++;
           }
           var len = Math.hypot(px[next] - px[cur], py[next] - py[cur]);
           if (jumping) {
