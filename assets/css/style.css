@@ -58,9 +58,10 @@ p{margin:0 0 1rem}
 .hero-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:2rem;align-items:center}
 .hero-text{position:relative;z-index:1}
 .hero h1{font-size:clamp(2.6rem,5vw,4rem);letter-spacing:-.02em;line-height:1.02;text-wrap:balance;margin-bottom:2.25rem}
-.meta-row{list-style:none;display:flex;flex-wrap:wrap;gap:1rem 2.5rem;padding:0;margin:0 0 2rem}
-.meta-row li{display:flex;gap:.9rem;align-items:center}
-.meta-row li+li{padding-left:2.5rem;border-left:1px solid var(--line)}
+.meta-row{list-style:none;display:flex;flex-wrap:wrap;gap:1rem 5rem;padding:0;margin:0 0 2rem;overflow:hidden}
+.meta-row li{display:flex;gap:.9rem;align-items:center;position:relative}
+/* separator sits in the column gap; clipped by overflow when an item wraps to the start of a line */
+.meta-row li+li::before{content:"";position:absolute;left:-2.5rem;top:0;bottom:0;border-left:1px solid var(--line)}
 .meta-row svg{width:34px;height:34px;color:var(--primary);flex:none}
 .meta-row strong{display:block;font-weight:500;font-size:1.1rem;line-height:1.3}
 .meta-row small{display:block;color:var(--muted);font-size:.95rem}
@@ -151,7 +152,6 @@ p{margin:0 0 1rem}
   .hero-text>*{position:relative;z-index:1}
   .hero-text .lead,.hero-text .btn-row{order:2}
   .prose-grid,.cfp-grid{grid-template-columns:1fr}
-  .meta-row li+li{padding-left:0;border-left:0}
 }
 @media(max-width:600px){
   body{font-size:16px}
