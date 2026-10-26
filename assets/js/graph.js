@@ -13,6 +13,9 @@ const CONFIG = {
   messageColor: '#b5646a',  // colour of the message dot, glow, trail and pulse
   messageRadius: 5,         // radius of the message dot in px
   seed: 7,                  // PRNG seed: changes the layout (and the walk)
+  nodeCount: 39,            // foreground nodes (including the central hub)
+  bgNodeCount: 18,          // faint background depth nodes
+  frameAspect: 16 / 16,       // width / height of the graph's frame, centered in the canvas
   showDot: false,           // message dot + glow (off: only the trail is drawn)
   showTrail: true,          // short fading trail behind the message
   showPulse: false,          // expanding ring on a node when the message arrives
@@ -99,7 +102,7 @@ const CONFIG = {
       return clusters[0];
     }
 
-    var target = 55, tries = 0;
+    var target = CONFIG.nodeCount, tries = 0;
     while (nodes.length < target && tries++ < 20000) {
       var cl = pickCluster();
       var x = cl.x + gauss() * cl.sx, y = cl.y + gauss() * cl.sy;
@@ -121,7 +124,7 @@ const CONFIG = {
     }
 
     // Background depth nodes: larger, faint, no edges.
-    for (var b = 0; b < 26; b++) {
+    for (var b = 0; b < CONFIG.bgNodeCount; b++) {
       bg.push({
         x: 0.05 + rnd() * 0.9, y: 0.05 + rnd() * 0.9,
         r: 0.012 + rnd() * 0.022,
@@ -150,7 +153,7 @@ const CONFIG = {
       for (var j = 0; j < k; j++) if (j === 0 || rnd() > 0.15) addEdge(a, order[j]);
     }
     // A few longer-range links, as in real networks.
-    for (var l = 0; l < 7; l++) {
+    for (var l = 0; l < 5; l++) {
       var la = Math.floor(rnd() * n), lb = Math.floor(rnd() * n);
       if (dist2(la, lb) < 0.35 * 0.35) addEdge(la, lb);
     }
@@ -200,11 +203,12 @@ const CONFIG = {
     var offNodes = document.createElement('canvas');   // foreground nodes
     var nctx = offNodes.getContext('2d');
     var W = 0, H = 0, dpr = 1, minDim = 0;
+    var FX = 0, FY = 0, FW = 0, FH = 0;           // graph frame within the canvas
     var px = [], py = [];                         // node positions in CSS px
 
-    // Opacity multiplier toward the canvas edges (matches the mask below).
+    // Opacity multiplier toward the frame edges (matches the mask below).
     function fade(x, y) {
-      var dx = (x / W - 0.5) / 0.5, dy = (y / H - 0.5) / 0.5;
+      var dx = ((x - FX) / FW - 0.5) / 0.5, dy = ((y - FY) / FH - 0.5) / 0.5;
       var t = Math.sqrt(dx * dx + dy * dy);
       var f = Math.min(1, Math.max(0, (t - 0.72) / 0.28));
       return 1 - f * f * (3 - 2 * f);
@@ -214,12 +218,12 @@ const CONFIG = {
       var nodes = graph.nodes;
       octx.setTransform(dpr, 0, 0, dpr, 0, 0);
       octx.clearRect(0, 0, W, H);
-      px = nodes.map(function (nd) { return nd.x * W; });
-      py = nodes.map(function (nd) { return nd.y * H; });
+      px = nodes.map(function (nd) { return FX + nd.x * FW; });
+      py = nodes.map(function (nd) { return FY + nd.y * FH; });
 
       // Faded depth nodes (soft radial gradients, no blur filter needed).
       graph.bg.forEach(function (b) {
-        var x = b.x * W, y = b.y * H, r = b.r * minDim;
+        var x = FX + b.x * FW, y = FY + b.y * FH, r = b.r * minDim;
         var g = octx.createRadialGradient(x, y, 0, x, y, r);
         g.addColorStop(0, hexA(b.color, 0.45));
         g.addColorStop(0.6, hexA(b.color, 0.25));
@@ -254,7 +258,7 @@ const CONFIG = {
     function applyMask(c) {
       c.save();
       c.globalCompositeOperation = 'destination-in';
-      c.translate(W / 2, H / 2); c.scale(W / 2, H / 2);
+      c.translate(FX + FW / 2, FY + FH / 2); c.scale(FW / 2, FH / 2);
       var m = c.createRadialGradient(0, 0, 0, 0, 0, 1);
       for (var i = 0; i <= 10; i++) {
         var t = 0.72 + 0.028 * i, f = (t - 0.72) / 0.28;
@@ -277,6 +281,9 @@ const CONFIG = {
       var d = window.devicePixelRatio || 1;
       if (w === W && h === H && d === dpr) return;
       W = w; H = h; dpr = d; minDim = Math.min(W, H);
+      // Largest landscape frame of the configured aspect that fits the canvas.
+      FW = Math.min(W, H * CONFIG.frameAspect); FH = FW / CONFIG.frameAspect;
+      FX = (W - FW) / 2; FY = (H - FH) / 2;
       canvas.width = off.width = offNodes.width = Math.round(W * dpr);
       canvas.height = off.height = offNodes.height = Math.round(H * dpr);
       drawStatic();
