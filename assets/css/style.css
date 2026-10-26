@@ -107,6 +107,7 @@ p{margin:0 0 1rem}
 .person-card:hover,.person-card:focus-visible{transform:translateY(-4px);box-shadow:0 14px 30px rgba(22,38,31,.1);border-color:var(--rose)}
 .person-card:focus-visible{outline:3px solid var(--rose);outline-offset:3px}
 .monogram{flex:none;width:60px;height:60px;border-radius:50%;display:grid;place-items:center;font-family:var(--serif);font-size:1.4rem;font-weight:500;letter-spacing:.02em;object-fit:cover}
+.avatar{flex:none;width:103px;height:103px;border-radius:50%;object-fit:cover;object-position:50% 30%;background:var(--line)}
 .t1{background:#dfe5d8;color:#2b4a38}.t2{background:#e8e5cb;color:#5a5630}.t3{background:var(--sage);color:#fffdf7}.t4{background:var(--olive);color:#2d2c18}.t5{background:#c9d3c1;color:var(--primary)}
 .person-body{display:flex;flex-direction:column;gap:.2rem;min-width:0}
 .person-name{font-family:var(--serif);font-size:1.45rem;line-height:1.2;color:var(--primary);transition:color .25s}
